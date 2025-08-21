@@ -36,7 +36,7 @@ AND NOT EXISTS (
   WHERE R.person = C.person
     AND R.offer_id = C.offer_id
     AND R.[time] <= C.[time]
-    AND C.time_in_days <= (R.time_in_days + P.duration)
+    AND C.time <= (R.time + (P.duration * 24))
 );     -- 0 records found
 
 -- 6. Checking for offers which completed even after the duration is over
@@ -255,13 +255,3 @@ SELECT TOP 5 * FROM offer_viewed;
 SELECT TOP 5 * FROM transaction_done;
 SELECT TOP 5 * FROM offer_completed;
 
--- Deleting Duplicate Rows
-WITH CTE AS (
-  SELECT *, 
-  ROW_NUMBER() OVER(PARTITION BY person, offer_id, event, [time], amount, reward, time_in_days ORDER BY (SELECT NULL)) rn 
-  FROM transcript_cleaned
-) 
-DELETE FROM CTE 
-WHERE rn > 1;
-
-SELECT * FROM transcript_cleaned;

@@ -158,29 +158,22 @@ WHERE TABLE_NAME = 'transcript_cleaned';
 
 EXEC sp_help 'transcript_cleaned';
 
--- Adding new column to convert time in days
-ALTER TABLE transcript_cleaned
-ADD time_in_days INT;
-
-UPDATE transcript_cleaned
-SET time_in_days = FLOOR([time]/24.0);
-
 -- Creating different view for each event
 /*
   CREATE VIEW offer_received AS 
-  SELECT person, offer_id, event, [time], time_in_days
+  SELECT person, offer_id, event, [time]
   FROM transcript_cleaned WHERE event = 'offer received';
 
   CREATE VIEW offer_viewed AS 
-  SELECT person, offer_id, event, [time], time_in_days
+  SELECT person, offer_id, event, [time]
   FROM transcript_cleaned WHERE event = 'offer viewed';
 
   CREATE VIEW transaction_done AS 
-  SELECT person, event, amount, [time], time_in_days
+  SELECT person, event, amount, [time]
   FROM transcript_cleaned WHERE event = 'transaction';
 
   CREATE VIEW offer_completed AS 
-  SELECT person, offer_id, event, reward, [time], time_in_days
+  SELECT person, offer_id, event, reward, [time]
   FROM transcript_cleaned WHERE event = 'offer completed';
 */
 
@@ -188,4 +181,3 @@ SELECT * FROM offer_received;
 SELECT * FROM offer_viewed;
 SELECT * FROM transaction_done;
 SELECT * FROM offer_completed;
-
