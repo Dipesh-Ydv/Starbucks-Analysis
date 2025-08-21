@@ -75,7 +75,8 @@ SELECT
     expiry_time
 FROM Matched
 WHERE rn = 1            -- pick the latest received before completion
-  AND completed_time > expiry_time;
+  AND completed_time > expiry_time;           -- 0 records found
+
 
 -- 7. Records where order is completed without viewing it (This shows no influence of offer on transaction)
 SELECT c.person,
@@ -112,38 +113,138 @@ FROM Matched
 WHERE rn IS NULL;  -- means no view exists before completion
 
 -- 8. Offer completed without min amount spent 
-WITH MatchedOffers AS (
-    SELECT 
-        c.person,
-        c.offer_id,
-        MAX(r.[time]) AS received_time,   -- latest receive before completion
-        c.[time] AS completed_time
-    FROM offer_completed c
-    JOIN offer_received r
-      ON r.person = c.person
-     AND r.offer_id = c.offer_id
-     AND r.[time] <= c.[time]
-    GROUP BY c.person, c.offer_id, c.[time]
+WITH matched_offers AS (
+  SELECT 
+    r.person,
+    r.offer_id,
+    MAX(r.[time]) received_time,
+    c.[time] completed_time,
+    c.reward
+  FROM offer_received r 
+  JOIN offer_completed c
+    ON r.person = c.person
+    AND r.offer_id = c.offer_id
+    AND r.[time] <= c.[time]
+  GROUP BY r.person, r.offer_id, c.[time], c.reward
+), trans_sum AS (
+  SELECT 
+    m.person,
+    m.offer_id,
+    m.received_time,
+    m.completed_time,
+    p.difficulty,
+    ROUND(SUM(t.amount), 2) total_spent
+  FROM matched_offers m
+  JOIN portfolio_cleaned p 
+    ON m.offer_id = p.id
+  LEFT JOIN transaction_done t 
+    ON m.person = t.person 
+    AND t.[time] BETWEEN m.received_time AND m.completed_time
+  GROUP BY m.person, m.offer_id, m.received_time, m.completed_time, p.difficulty
+) 
+SELECT * 
+FROM trans_sum 
+WHERE total_spent < difficulty;               -- 134 records found
+
+-- Window Function approach for the same
+WITH received_completed AS (
+    SELECT
+        r.person,
+        r.offer_id,
+        r.[time] AS received_time,
+        c.[time] AS completed_time,
+        c.reward,
+        ROW_NUMBER() OVER (
+            PARTITION BY r.person, r.offer_id, c.[time]
+            ORDER BY r.[time] DESC
+        ) AS rn
+    FROM offer_received r
+    JOIN offer_completed c
+        ON r.person = c.person
+       AND r.offer_id = c.offer_id
+       AND r.[time] <= c.[time]
 ),
-TxnSum AS (
+matched_offers AS (
+    -- Keep only the *latest* receipt before each completion
+    SELECT
+        person,
+        offer_id,
+        received_time,
+        completed_time,
+        reward
+    FROM received_completed
+    WHERE rn = 1
+),
+trans_sum AS (
     SELECT 
         m.person,
         m.offer_id,
         m.received_time,
         m.completed_time,
         p.difficulty,
-        COALESCE(SUM(t.amount), 0) AS total_spent
-    FROM MatchedOffers m
-    JOIN portfolio_cleaned p
-       ON m.offer_id = p.id
-    LEFT JOIN transaction_done t
-      ON t.person = m.person
-      AND t.time BETWEEN m.received_time AND m.completed_time
+        ROUND(SUM(t.amount), 0) AS total_spent
+    FROM matched_offers m
+    JOIN portfolio_cleaned p 
+        ON m.offer_id = p.id
+    LEFT JOIN transaction_done t 
+        ON m.person = t.person 
+       AND t.[time] BETWEEN m.received_time AND m.completed_time
     GROUP BY m.person, m.offer_id, m.received_time, m.completed_time, p.difficulty
 )
 SELECT *
-FROM TxnSum
-WHERE total_spent < difficulty;
+FROM trans_sum
+WHERE total_spent < difficulty;       -- 134 records; Both are returning same number of records; 128 records when rounding to zero decimal place
+
+-- 9. Checking for same offer received to a person before its expiration or before been completed
+WITH offer_info AS (
+    SELECT 
+        t.person,
+        t.offer_id,
+        t.time AS received_time,
+        p.duration
+    FROM offer_received t
+    JOIN portfolio p 
+      ON t.offer_id = p.id
+),
+completed AS (
+    SELECT 
+        person,
+        offer_id,
+        time AS completed_time
+    FROM offer_completed
+),
+offer_with_expiry AS (
+    SELECT 
+      r.person,
+      r.offer_id,
+      r.received_time,
+      r.received_time + (r.duration * 24) expiry_time,
+      MIN(c.completed_time) completed_time
+    FROM offer_info r 
+    LEFT JOIN completed c 
+      ON r.person = c.person 
+      AND r.offer_id = c.offer_id
+      AND r.received_time <= c.completed_time
+    GROUP BY r.person, r.offer_id, r.received_time, r.duration
+)
+SELECT 
+    r1.person,
+    r1.offer_id,
+    r1.received_time AS first_received,
+    r2.received_time AS second_received,
+    r1.expiry_time,
+    r1.completed_time
+FROM offer_with_expiry r1
+JOIN offer_with_expiry r2
+  ON r1.person = r2.person
+ AND r1.offer_id = r2.offer_id
+ AND r2.received_time > r1.received_time
+WHERE 
+    -- check if 2nd receipt happens before expiry AND before completion
+    (r2.received_time < r1.expiry_time)
+ AND (r1.completed_time IS NOT NULL AND r2.received_time < r1.completed_time);        -- 674 records found
+
+
 
 
 SELECT TOP 5 * FROM [profile];
@@ -153,3 +254,14 @@ SELECT TOP 5 * FROM offer_received;
 SELECT TOP 5 * FROM offer_viewed;
 SELECT TOP 5 * FROM transaction_done;
 SELECT TOP 5 * FROM offer_completed;
+
+-- Deleting Duplicate Rows
+WITH CTE AS (
+  SELECT *, 
+  ROW_NUMBER() OVER(PARTITION BY person, offer_id, event, [time], amount, reward, time_in_days ORDER BY (SELECT NULL)) rn 
+  FROM transcript_cleaned
+) 
+DELETE FROM CTE 
+WHERE rn > 1;
+
+SELECT * FROM transcript_cleaned;
