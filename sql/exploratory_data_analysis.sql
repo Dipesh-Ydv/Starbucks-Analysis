@@ -1,7 +1,8 @@
+-- # UNIVARIATE ANALYSIS
+
+
 -- PROFILE TABLE 
 
-
--- UNIVARIATE ANALYSIS
 
 -- 1. Age Distribution
 SELECT 
@@ -108,10 +109,9 @@ SELECT * FROM profile_cleaned;
 
 
 
+
 -- PORTFOLIO TABLE
 
-
--- UNIVARIATE ANALYSIS
 
 -- 1. Total Offers
 SELECT COUNT(DISTINCT id) total_offers
@@ -163,8 +163,6 @@ SELECT * FROM portfolio_cleaned;
 
 -- TRANSCRIPT TABLE
 
-
--- UNIVARIATE ANALYSIS
 
 -- 1. Number of records with each event (Event Distribution)
 SELECT 
@@ -249,5 +247,109 @@ WHERE offer_id IS NOT NULL
 GROUP BY offer_id; 
 
 
-SELECT * 
-FROM transcript_cleaned;
+SELECT * FROM transcript_cleaned;
+
+
+
+
+-- # BIVARIATE ANALYSIS
+
+
+-- 1. Offer completion by Gender
+SELECT 
+    p.gender,
+    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
+    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
+    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+FROM transcript_cleaned t 
+JOIN profile_cleaned p ON t.person = p.id
+GROUP BY p.gender;
+
+-- 2. Offer completion by Age group
+WITH age_cat AS (
+    SELECT 
+        id,
+        gender,
+        CASE 
+            WHEN age < 30 THEN 'Under 30'
+            WHEN age BETWEEN 30 AND 45 THEN '30-45'
+            WHEN age BETWEEN 46 AND 60 THEN '46-60'
+            WHEN age BETWEEN 61 AND 75 THEN '61-75'
+            ELSE '76+'
+        END AS age_group,
+        income
+    FROM profile_cleaned
+) 
+SELECT 
+    a.age_group,
+    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
+    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
+    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+FROM transcript_cleaned t 
+JOIN age_cat a ON t.person = a.id
+GROUP BY a.age_group;
+
+-- 3. Offer completion by Income group
+WITH income_cat AS (
+    SELECT 
+        *,
+        CASE NTILE(4) OVER(ORDER BY income)
+            WHEN 1 THEN 'Low Income'
+            WHEN 2 THEN 'Lower-Middle Income'
+            WHEN 3 THEN 'Upper-Middle Income'
+            WHEN 4 THEN 'High Income'
+        END AS income_groups
+    FROM profile_cleaned
+)
+SELECT 
+    i.income_groups,
+    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
+    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
+    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+FROM transcript_cleaned t 
+JOIN income_cat i ON t.person = i.id
+GROUP BY i.income_groups;
+
+-- 4. Duration Vs Completion Rate
+SELECT 
+    p.duration,
+    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
+    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
+    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+FROM transcript_cleaned t 
+JOIN portfolio_cleaned p ON t.offer_id = p.id
+-- WHERE P.offer_type != 'informational'       -- Because informaitonal offers can't be completed
+GROUP BY p.duration;
+
+-- 5. Difficulty Vs Completion Rate
+SELECT 
+    p.difficulty,
+    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
+    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
+    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+FROM transcript_cleaned t 
+JOIN portfolio_cleaned p ON t.offer_id = p.id
+WHERE P.offer_type != 'informational'           -- Because informaitonal offers can't be completed
+GROUP BY p.difficulty;
+
+-- 6. Reward Vs Completion Rate
+SELECT 
+    p.reward,
+    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
+    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
+    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+FROM transcript_cleaned t 
+JOIN portfolio_cleaned p ON t.offer_id = p.id
+WHERE P.offer_type != 'informational'           -- Because informaitonal offers can't be completed
+GROUP BY p.reward;
+
+-- 7. Offer type Vs Completion Rate
+SELECT 
+    p.offer_type,
+    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
+    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
+    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+FROM transcript_cleaned t 
+JOIN portfolio_cleaned p ON t.offer_id = p.id
+GROUP BY p.offer_type;
+
