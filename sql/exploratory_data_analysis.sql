@@ -258,11 +258,12 @@ SELECT * FROM transcript_cleaned;
 -- 1. Offer completion by Gender
 SELECT 
     p.gender,
-    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
-    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
-    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END)/ SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
 FROM transcript_cleaned t 
 JOIN profile_cleaned p ON t.person = p.id
+JOIN portfolio_cleaned o ON t.offer_id = o.id
+WHERE o.offer_type != 'informational'
 GROUP BY p.gender;
 
 -- 2. Offer completion by Age group
@@ -276,17 +277,17 @@ WITH age_cat AS (
             WHEN age BETWEEN 46 AND 60 THEN '46-60'
             WHEN age BETWEEN 61 AND 75 THEN '61-75'
             ELSE '76+'
-        END AS age_group,
-        income
+        END AS age_group
     FROM profile_cleaned
 ) 
 SELECT 
     a.age_group,
-    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
-    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
-    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END)/ SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
 FROM transcript_cleaned t 
 JOIN age_cat a ON t.person = a.id
+JOIN portfolio_cleaned o ON t.offer_id = o.id
+WHERE o.offer_type != 'informational'
 GROUP BY a.age_group;
 
 -- 3. Offer completion by Income group
@@ -303,19 +304,19 @@ WITH income_cat AS (
 )
 SELECT 
     i.income_groups,
-    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
-    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
-    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END)/ SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
 FROM transcript_cleaned t 
 JOIN income_cat i ON t.person = i.id
+JOIN portfolio_cleaned o ON t.offer_id = o.id
+WHERE o.offer_type != 'informational'
 GROUP BY i.income_groups;
 
 -- 4. Duration Vs Completion Rate
 SELECT 
     p.duration,
-    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
-    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
-    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END)/ SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
 FROM transcript_cleaned t 
 JOIN portfolio_cleaned p ON t.offer_id = p.id
 -- WHERE P.offer_type != 'informational'       -- Because informaitonal offers can't be completed
@@ -324,9 +325,8 @@ GROUP BY p.duration;
 -- 5. Difficulty Vs Completion Rate
 SELECT 
     p.difficulty,
-    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
-    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
-    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END)/ SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
 FROM transcript_cleaned t 
 JOIN portfolio_cleaned p ON t.offer_id = p.id
 WHERE P.offer_type != 'informational'           -- Because informaitonal offers can't be completed
@@ -335,9 +335,8 @@ GROUP BY p.difficulty;
 -- 6. Reward Vs Completion Rate
 SELECT 
     p.reward,
-    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
-    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
-    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END)/ SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
 FROM transcript_cleaned t 
 JOIN portfolio_cleaned p ON t.offer_id = p.id
 WHERE P.offer_type != 'informational'           -- Because informaitonal offers can't be completed
@@ -346,10 +345,69 @@ GROUP BY p.reward;
 -- 7. Offer type Vs Completion Rate
 SELECT 
     p.offer_type,
-    SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) received_offers,
-    SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) viewed_offers,
-    SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) completed_offers
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END)/ SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
 FROM transcript_cleaned t 
 JOIN portfolio_cleaned p ON t.offer_id = p.id
+WHERE p.offer_type != 'informational'
 GROUP BY p.offer_type;
+
+
+
+
+-- # MULTIVARIATE ANALYSIS
+
+
+/* 1. Age Vs Income Completion Rate */
+WITH cte AS (
+    SELECT 
+        t.*,
+        CASE 
+            WHEN age < 30 THEN 'Under 30'
+            WHEN age BETWEEN 30 AND 45 THEN '30-45'
+            WHEN age BETWEEN 46 AND 60 THEN '46-60'
+            WHEN age BETWEEN 61 AND 75 THEN '61-75'
+            ELSE '76+'
+        END AS age_group,
+        CASE NTILE(4) OVER(ORDER BY income)
+            WHEN 1 THEN 'Low Income'
+            WHEN 2 THEN 'Lower-Middle Income'
+            WHEN 3 THEN 'Upper-Middle Income'
+            WHEN 4 THEN 'High Income'
+        END AS income_group
+    FROM profile_cleaned p 
+    JOIN transcript_cleaned t ON p.id = t.person
+    JOIN portfolio_cleaned o ON o.id = t.offer_id
+    WHERE o.offer_type != 'informational'
+)
+SELECT 
+    age_group,
+    income_group,
+    1.0 * SUM(CASE WHEN event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN event = 'offer completed' THEN 1 ELSE 0 END) / SUM(CASE WHEN event = 'offer received' THEN 1 ELSE 0 END) completion_rate
+FROM cte
+GROUP BY age_group, income_group;
+
+-- 2. Gender Vs Offer Type Vs Completion Rate
+SELECT 
+    p.gender,
+    o.offer_type,
+    1.0 * SUM(CASE WHEN t.event = 'offer viewed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) view_rate,
+    1.0 * SUM(CASE WHEN t.event = 'offer completed' THEN 1 ELSE 0 END) / SUM(CASE WHEN t.event = 'offer received' THEN 1 ELSE 0 END) completion_rate
+FROM transcript_cleaned t 
+JOIN portfolio_cleaned o ON t.offer_id = o.id
+JOIN profile_cleaned p ON t.person = p.id
+WHERE o.offer_type != 'informational'
+GROUP BY p.gender, o.offer_type;
+
+-- Co-relation between age and income
+SELECT 
+    (COUNT(*) * SUM(CAST(age AS FLOAT) * CAST(income AS FLOAT)) 
+        - SUM(CAST(age AS FLOAT)) * SUM(CAST(income AS FLOAT))) /
+    (SQRT(COUNT(*) * SUM(POWER(CAST(age AS FLOAT), 2)) 
+        - POWER(SUM(CAST(age AS FLOAT)), 2)) *
+     SQRT(COUNT(*) * SUM(POWER(CAST(income AS FLOAT), 2)) 
+        - POWER(SUM(CAST(income AS FLOAT)), 2))) 
+     AS correlation
+FROM profile_cleaned;
 
