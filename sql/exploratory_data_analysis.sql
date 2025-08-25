@@ -37,6 +37,43 @@ SELECT *
 FROM outlier_cal
 WHERE outlier_category IN ('High Outlier', 'Low Outlier');              -- There 48 person with age in High Outlier Category 
 
+-- Mean Age
+SELECT AVG(age) avg_age
+FROM profile_cleaned;       -- Mean age is 54 
+
+-- Mode Age
+SELECT TOP 1
+    age, COUNT(*) cnt
+FROM profile_cleaned p 
+GROUP BY age
+ORDER BY cnt DESC;      -- Mode age is 54
+
+-- Median Age
+SELECT TOP 1
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY age) OVER() median_age
+FROM profile_cleaned;          -- Median age is 54
+
+-- Customer Distribution by age Group
+WITH age_cat AS (
+    SELECT 
+        id,
+        gender,
+        CASE 
+            WHEN age < 30 THEN 'Under 30'
+            WHEN age BETWEEN 30 AND 45 THEN '30-45'
+            WHEN age BETWEEN 46 AND 60 THEN '46-60'
+            WHEN age BETWEEN 61 AND 75 THEN '61-75'
+            ELSE '76+'
+        END AS age_group
+    FROM profile_cleaned
+)
+SELECT 
+    age_group,
+    COUNT(*) cust_cnt
+FROM age_cat
+GROUP BY age_group
+ORDER BY cust_cnt;
+
 -- 2. Income Distribution
 SELECT 
     DISTINCT 
@@ -69,6 +106,42 @@ WITH box_stats AS (
 SELECT *
 FROM outlier_cal
 WHERE outlier_category IN ('High Outlier', 'Low Outlier');             -- There 306 persons whose income is in High Outlier Category 
+
+-- Mean of Income
+SELECT AVG(income) avg_income
+FROM profile_cleaned;       -- 65,744.5
+
+-- Median of Income 
+SELECT TOP 1
+    PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY income) OVER() median_income
+FROM profile_cleaned;       -- 63,000
+
+-- Mode of Income
+SELECT TOP 1
+    income, COUNT(*) cnt
+FROM profile_cleaned
+WHERE income IS NOT NULL
+GROUP BY income
+ORDER BY cnt DESC;          -- 63,000
+
+-- Customer Distribution by Income Group
+WITH income_cat AS (
+    SELECT 
+    income,
+    CASE 
+        WHEN income < 51000 THEN 'Low Income'                   -- Below Q1
+        WHEN income >= 51000 AND income < 63000 THEN 'Lower-Middle Income'  -- Q1 to Median
+        WHEN income >= 63000 AND income < 76000 THEN 'Upper-Middle Income'  -- Median to Q3
+        WHEN income >= 76000 THEN 'High Income'                 -- Above Q3
+    END AS income_groups
+    FROM profile_cleaned 
+)
+SELECT 
+    income_groups,
+    COUNT(*) cust_cnt
+FROM income_cat
+GROUP BY income_groups
+ORDER BY cust_cnt;
 
 -- 3. Gender Distribution
 SELECT 
@@ -119,17 +192,17 @@ FROM portfolio_cleaned; -- 10
 
 -- 2. Number of distinct offer send through each channel
 SELECT 
-    SUM(web) offers_as_channel_web,
-    SUM(email) offers_as_channel_email,
-    SUM(mobile) offers_as_channel_mobile,
-    SUM(social) offers_as_channel_social
+    1.0* SUM(web)/ (SELECT COUNT(DISTINCT id) FROM portfolio_cleaned) web_as_offer_channel,
+    1.0* SUM(email)/ (SELECT COUNT(DISTINCT id) FROM portfolio_cleaned) email_as_offer_channel,
+    1.0* SUM(mobile)/(SELECT COUNT(DISTINCT id) FROM portfolio_cleaned) mobile_as_offer_channel,
+    1.0* SUM(social)/(SELECT COUNT(DISTINCT id) FROM portfolio_cleaned) social_as_offer_channel
 FROM portfolio_cleaned;
 
 -- 3. Number of offers for each offer type
-SELECT offer_type, COUNT(*) offer_cnt
+SELECT offer_type, 1.0 * COUNT(*) / (SELECT COUNT(DISTINCT id) FROM portfolio_cleaned) offer_distribution
 FROM portfolio_cleaned
 GROUP BY offer_type
-ORDER BY offer_cnt DESC;      
+ORDER BY offer_distribution DESC;      
 
 -- 4. Number of offer for each reward
 SELECT 
@@ -293,13 +366,14 @@ GROUP BY a.age_group;
 -- 3. Offer completion by Income group
 WITH income_cat AS (
     SELECT 
-        *,
-        CASE NTILE(4) OVER(ORDER BY income)
-            WHEN 1 THEN 'Low Income'
-            WHEN 2 THEN 'Lower-Middle Income'
-            WHEN 3 THEN 'Upper-Middle Income'
-            WHEN 4 THEN 'High Income'
-        END AS income_groups
+    id,
+    income,
+    CASE 
+        WHEN income < 51000 THEN 'Low Income'                   -- Below Q1
+        WHEN income >= 51000 AND income < 63000 THEN 'Lower-Middle Income'  -- Q1 to Median
+        WHEN income >= 63000 AND income < 76000 THEN 'Upper-Middle Income'  -- Median to Q3
+        WHEN income >= 76000 THEN 'High Income'                 -- Above Q3
+    END AS income_groups
     FROM profile_cleaned
 )
 SELECT 
@@ -369,11 +443,11 @@ WITH cte AS (
             WHEN age BETWEEN 61 AND 75 THEN '61-75'
             ELSE '76+'
         END AS age_group,
-        CASE NTILE(4) OVER(ORDER BY income)
-            WHEN 1 THEN 'Low Income'
-            WHEN 2 THEN 'Lower-Middle Income'
-            WHEN 3 THEN 'Upper-Middle Income'
-            WHEN 4 THEN 'High Income'
+        CASE 
+            WHEN income < 51000 THEN 'Low Income'                   -- Below Q1
+            WHEN income >= 51000 AND income < 63000 THEN 'Lower-Middle Income'  -- Q1 to Median
+            WHEN income >= 63000 AND income < 76000 THEN 'Upper-Middle Income'  -- Median to Q3
+            WHEN income >= 76000 THEN 'High Income'                 -- Above Q3
         END AS income_group
     FROM profile_cleaned p 
     JOIN transcript_cleaned t ON p.id = t.person

@@ -99,12 +99,6 @@ SELECT *
 FROM profile_cleaned
 WHERE income IS NULL;       -- 2,175
 
--- Checking of any outlier income
-SELECT income, COUNT(*) cnt
-FROM profile_cleaned
-GROUP BY income
-ORDER BY income DESC;       -- There is no such outliers in income
-
 -- Mean of Income
 SELECT AVG(income) avg_income
 FROM profile_cleaned;       -- 65,404
@@ -195,6 +189,14 @@ WITH CTE AS (
 SELECT * INTO transcript_cleaned
 FROM CTE;
 
+-- Changing the datatype of reward column from nvarchar to float
+ALTER TABLE transcript_cleaned 
+ALTER COLUMN reward FLOAT;
+
+-- Changing the datatype of amount column from nvarchar to float
+ALTER TABLE transcript_cleaned 
+ALTER COLUMN amount FLOAT;
+
 -- Checking for Duplicate Rows
 SELECT DISTINCT person, offer_id, event, [time], amount, reward
 FROM transcript_cleaned;
@@ -207,5 +209,211 @@ WITH CTE AS (
 ) 
 DELETE FROM CTE 
 WHERE rn > 1;
+
+
+-- Deleting offer received records where same offer is received before expiration or before the completion of first one
+-- Step 1: Mark the next receipt of the same offer
+WITH receipt_pairs AS (
+    SELECT
+        r1.person,
+        r1.offer_id,
+        r1.time AS first_received,
+        p.duration,
+        COALESCE(MIN(c.time), ((p.duration*24) + r1.time)) AS valid_until,
+        LEAD(r1.time) OVER (
+            PARTITION BY r1.person, r1.offer_id
+            ORDER BY r1.time
+        ) AS next_received
+    FROM offer_received r1
+    JOIN portfolio_cleaned p
+        ON r1.offer_id = p.id
+    LEFT JOIN offer_completed c
+        ON r1.person = c.person
+       AND r1.offer_id = c.offer_id
+       AND c.time >= r1.time
+       AND c.time <= (p.duration*24) + r1.time  -- must be within expiry
+    GROUP BY r1.person, r1.offer_id, r1.time, p.duration
+)
+-- Step 2: Identify bad first receipts
+, bad_receipts AS (
+    SELECT
+        person,
+        offer_id,
+        first_received
+    FROM receipt_pairs
+    WHERE next_received IS NOT NULL
+      AND next_received < valid_until
+)
+-- Step 3: Delete the bad first receipts
+DELETE r
+FROM offer_received r
+JOIN bad_receipts b
+  ON r.person = b.person
+ AND r.offer_id = b.offer_id
+ AND r.time = b.first_received;                 -- 1,889 records deleted
+
+-- Deleting records where offer is completed without min spend 
+WITH Portfolio AS (
+    SELECT id AS offer_id, difficulty, duration
+    FROM portfolio_cleaned
+),
+Received AS (
+    SELECT
+        r.person,
+        r.offer_id,
+        r.time AS received_time,
+        (p.duration * 24) + r.time AS expiry_time,
+        p.difficulty
+    FROM offer_received r
+    JOIN Portfolio p ON r.offer_id = p.offer_id
+),
+CompletedMatched AS (
+    SELECT
+        c.person,
+        c.offer_id,
+        c.time AS completed_time,
+        r.received_time,
+        r.expiry_time,
+        r.difficulty,
+        ROW_NUMBER() OVER (
+            PARTITION BY c.person, c.offer_id, c.time
+            ORDER BY r.received_time DESC
+        ) AS rn
+    FROM offer_completed c
+    JOIN Received r
+      ON c.person = r.person
+     AND c.offer_id = r.offer_id
+     AND c.time BETWEEN r.received_time AND r.expiry_time
+),
+SpendAgg AS (
+    SELECT
+        cm.person,
+        cm.offer_id,
+        cm.completed_time,
+        cm.received_time,
+        cm.expiry_time,
+        cm.difficulty,
+        SUM(t.amount) AS total_spend
+    FROM CompletedMatched cm
+    LEFT JOIN transaction_done t
+      ON t.person = cm.person
+     AND t.time BETWEEN cm.received_time AND cm.expiry_time
+    WHERE cm.rn = 1   -- keep only the most recent valid receipt
+    GROUP BY
+        cm.person, cm.offer_id, cm.completed_time,
+        cm.received_time, cm.expiry_time, cm.difficulty
+)
+DELETE oc
+FROM offer_completed oc
+JOIN SpendAgg s
+  ON oc.person   = s.person
+ AND oc.offer_id = s.offer_id
+ AND oc.time     = s.completed_time
+WHERE s.total_spend < s.difficulty
+  AND s.completed_time <= s.expiry_time;
+
+
+
+WITH received_completed AS (
+    SELECT
+        r.person,
+        r.offer_id,
+        r.[time] AS received_time,
+        c.[time] AS completed_time,
+        c.reward,
+        ROW_NUMBER() OVER (
+            PARTITION BY r.person, r.offer_id, c.[time]
+            ORDER BY r.[time] DESC
+        ) AS rn
+    FROM offer_received r
+    JOIN offer_completed c
+        ON r.person = c.person
+       AND r.offer_id = c.offer_id
+       AND r.[time] <= c.[time]
+),
+matched_offers AS (
+    -- Keep only the *latest* receipt before each completion
+    SELECT
+        person,
+        offer_id,
+        received_time,
+        completed_time,
+        reward
+    FROM received_completed
+    WHERE rn = 1
+),
+trans_sum AS (
+    SELECT 
+        m.person,
+        m.offer_id,
+        m.received_time,
+        m.completed_time,
+        p.difficulty,
+        ROUND(SUM(t.amount), 0) AS total_spent
+    FROM matched_offers m
+    JOIN portfolio_cleaned p 
+        ON m.offer_id = p.id
+    LEFT JOIN transaction_done t 
+        ON m.person = t.person 
+       AND t.[time] BETWEEN m.received_time AND m.completed_time
+    GROUP BY m.person, m.offer_id, m.received_time, m.completed_time, p.difficulty
+), record_to_delete AS (
+    SELECT *
+    FROM trans_sum
+    WHERE total_spent < difficulty
+)
+DELETE oc
+FROM offer_completed oc 
+JOIN record_to_delete rd
+    ON oc.person = rd.person
+    AND oc.offer_id = rd.offer_id 
+    AND oc.[time] = rd.completed_time;
+
+
+WITH matched_offers AS (
+    SELECT 
+        c.person,
+        c.offer_id,
+        c.time AS completed_time,
+        c.reward,
+        r.time AS received_time,
+        p.difficulty
+    FROM offer_completed c
+    CROSS APPLY (
+        SELECT TOP 1 r.time
+        FROM offer_received r
+        WHERE r.person = c.person
+          AND r.offer_id = c.offer_id
+          AND r.time <= c.time
+        ORDER BY r.time DESC
+    ) r
+    JOIN portfolio_cleaned p
+      ON c.offer_id = p.id
+),
+trans_sum AS (
+    SELECT 
+        m.person,
+        m.offer_id,
+        m.received_time,
+        m.completed_time,
+        m.difficulty,
+        COALESCE(SUM(t.amount), 0) AS total_spent
+    FROM matched_offers m
+    LEFT JOIN transaction_done t
+      ON t.person = m.person
+     AND t.time BETWEEN m.received_time AND m.completed_time
+    GROUP BY m.person, m.offer_id, m.received_time, m.completed_time, m.difficulty
+)
+DELETE oc
+FROM offer_completed oc
+JOIN trans_sum ts
+  ON oc.person = ts.person
+ AND oc.offer_id = ts.offer_id
+ AND oc.time = ts.completed_time
+WHERE ts.total_spent < ts.difficulty;
+  
+
+
+
 
 SELECT * FROM transcript_cleaned;
